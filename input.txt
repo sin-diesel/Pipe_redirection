@@ -1,1 +1,1 @@
-cat sample.txt | head -7 | tail -5 | wc -l
+cat pipe.c | less
