@@ -1,1 +1,1 @@
-cat pipe.c | grep fprintf | wc -l
+ls -la / | grep bin

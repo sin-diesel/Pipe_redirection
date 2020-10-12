@@ -25,7 +25,6 @@
 #define ASSERT_OK(error)                                                                    
 #endif  
 
-//#define PRINT(info) fprintf(stderr, #info ## "\n");
 enum errors {
     NO_INPUT = -1,
     ARGS_OVERFLOW = -2,
@@ -36,6 +35,7 @@ enum errors {
     INP_FILE = -7,
     FORK_ERROR = -8,
     PIPE_ERROR = -9,
+    EXECVP_ERROR = -10,
 };
 
 
@@ -92,6 +92,11 @@ void dump(int error_type) {
         case FORK_ERROR:
         fprintf(stderr, "pipe error: could not fork\n");
         exit(FORK_ERROR);
+        break;
+
+        case EXECVP_ERROR:
+        fprintf(stderr, "pipe error: could not exec cmd\n");
+        exit(EXECVP_ERROR);
         break;
 
         case 0:
@@ -153,7 +158,7 @@ unsigned get_argc(char* cmd) {
         ++p;
         ++argc;
     }
-    //DBG(fprintf(stderr, "\n\n\n"))
+
     return argc;
 }
 
@@ -173,9 +178,6 @@ char** get_argv(char* cmd, int argc) {
         *next = '\0';
         ++p;
         p = skip_spaces(p);
-        // if (*p == '\0') {
-        //     break;
-        // }
         ++i;
     } 
     argv[i] = p;
@@ -260,8 +262,6 @@ struct commands_t* get_cmds(char* buf, unsigned buf_size) {
     ++cmd_count;
 
     commands->commands = n_comm;
-    //DBG(print_commands(commands))
-
 
     return commands;
 }
@@ -298,21 +298,22 @@ void exec_commands(struct commands_t* commands) {
                     ASSERT_OK(PIPE_ERROR)
                 }
             }
-            for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
-               close(fd[j]);
-            }
+            //for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+               close(fd[i]);
+            //}
             exec_cmd(&(commands->commands[i]));
             DBG(fprintf(stderr, "execvp error\n"))
+            exit(EXECVP_ERROR);
         }
     }
 
-    for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
-        close(fd[j]);
-    }
+    //for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+        close(fd[2 * (commands->n_cmd - 1) - 1]); // closing last pipe to put data to stdout
+    //}
 
     for(int j = 0; j < 2 * commands->n_cmd; j++) {
             wait(&status);
-        }
+    }
 }
 
 
@@ -350,9 +351,6 @@ int main (int argc, char** argv) {
 
     DBG(fprintf(stderr, "Freeing memory\n"))
     print_commands(commands);
-
-    //exec_commands(commands);
-    //execvp(commands->commands[0].argv[0], commands->commands[0].argv)
     
     #ifdef TEST
     char* argvv[5] = {"ls", "-G", "-p", "-l", NULL};
@@ -366,11 +364,7 @@ int main (int argc, char** argv) {
     #endif
 
     exec_commands(commands);
-    //execvp(commands->commands[0].argv[0], commands->commands[0].argv);
-    //execvp(commands->commands[0].argv[0], argvv);
-    //DBG(fprintf(stderr, "error calling execvp\n"))
-    //free(commands->c); add free later
-    //free(commands);
+
     free(buf);
     return 0;
 }
