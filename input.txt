@@ -1,1 +1,1 @@
-cat pipe.c | less
+cat pipe.c | less | wc -l

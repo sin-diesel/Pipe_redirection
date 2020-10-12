@@ -272,41 +272,41 @@ void exec_cmd(struct command_t* command) {
 
 void exec_commands(struct commands_t* commands) {
 
-    int* fd = (int*) calloc(commands->n_cmd * 2, sizeof(int)); //pipes
-    if (fd == NULL) {
-        ASSERT_OK(BAD_ALLOC)
+    // int* fd = (int*) calloc(commands->n_cmd * 2, sizeof(int)); //pipes
+    // if (pipe(fd) == -1) {
+    //     ASSERT_OK(PIPE_ERROR)
+    // }
+    // if (fd == NULL) {
+    //     ASSERT_OK(BAD_ALLOC)
+    // }
+    int test_fd[2] = {0};
+    int status;
+    int pid = 0;
+    if (pipe(test_fd) == -1) {
+            ASSERT_OK(PIPE_ERROR)
     }
-
     for (int i = 0; i < commands->n_cmd; ++i) {
-        int status;
-        int pid = fork();
-        //wait(&status);
-        if (pid < 0) {
-            ASSERT_OK(FORK_ERROR)
-        }
-        if (pid == 0) {
-            if (pipe(fd) == -1) {
-                ASSERT_OK(PIPE_ERROR)
+        wait(&status);
+        if ((pid = fork()) == 0) {
+            // if (pipe(test_fd) == -1) {
+            // ASSERT_OK(PIPE_ERROR)
+            // }
+            if (i == 1) {
+            DBG(fprintf(stderr, "Changing stdin to pipe\n"))
+            dup2(test_fd[0], STDIN_FILENO);
+            dup2(STDOUT_FILENO, test_fd[1]);
             }
-            //close(fd[2 * i + 1]);
-            if (i > 0) {
-                DBG(fprintf(stderr, "Changing stdin to pipe\n"))
-                //close(STDIN_FILENO);
-                dup2(fd[0], STDIN_FILENO);
-                //close(STDIN_FILENO);
+            if (i == 0) {
+            DBG(fprintf(stderr, "Changing stdout to pipe\n"))
+            dup2(test_fd[1], STDOUT_FILENO);
+            //dup2(STDIN_FILENO, test_fd[0]);
             }
-            if (i != commands->n_cmd - 1) {
-                DBG(fprintf(stderr, "Changing stdout to pipe\n"))
-                //close(STDOUT_FILENO);
-                dup2(fd[1], STDOUT_FILENO);
-            }
-            //close(STDOUT_FILENO);
+            //if (i == 1) {
+              //  dup2(1, test_fd[1]);
+           // }
             exec_cmd(&(commands->commands[i]));
-            close(fd[i]);
-        } else {
-            //close(fd[2 * i]);
+            //close(test_fd);
         }
-        //execvp(commands->commands[i].argv[0], commands[i].commands->argv);
     }
 }
 
