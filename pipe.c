@@ -6,17 +6,26 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 #include <string.h>
 
 #define TEST 1
 #define PIPE 124
 
+#ifdef TEST
 #define DBG(a) if (TEST) {a;}
+#else
+#define DBG(a)
+#endif
+
 #ifdef TEST
 #define ASSERT_OK(error) fprintf(stderr, "ERROR AT LINE %d, FUNCTION %s\nCALLING DUMP\n", __LINE__, __func__); \
-                         dump(error);                                                                          
+                         dump(error);  
+#else
+#define ASSERT_OK(error)                                                                    
 #endif  
 
+//#define PRINT(info) fprintf(stderr, #info ## "\n");
 enum errors {
     NO_INPUT = -1,
     ARGS_OVERFLOW = -2,
@@ -25,13 +34,14 @@ enum errors {
     ARGS_UNDERFLOW = -5,
     BAD_ALLOC = -6,
     INP_FILE = -7,
+    FORK_ERROR = -8,
+    PIPE_ERROR = -9,
 };
 
 
 struct command_t {
-    char* cmd;
     char** argv;
-    unsigned n_argv;
+    int argc;
 };
 
 struct commands_t {
@@ -79,6 +89,11 @@ void dump(int error_type) {
         exit(INP_FILE);
         break;
 
+        case FORK_ERROR:
+        fprintf(stderr, "pipe error: could not fork\n");
+        exit(FORK_ERROR);
+        break;
+
         case 0:
         break;
 
@@ -97,55 +112,212 @@ int handle_input(int argc, char** argv) {
     return input;
 }
 
-
-struct commands_t* get_cmd(char* buf, unsigned buf_size) {
+unsigned get_cmd_count(char* buf, unsigned buf_size) {
+    DBG(fprintf(stderr, "Getting cmd count...\n"))
     char* next = NULL;
     unsigned n_cmd = 1;
     char* p = buf;
-    while ((next = strchr(p, '|')) != NULL) {
-        DBG(fprintf(stderr, "next pipe in buf:%s\n", next))
+
+     while ((next = strchr(p, '|')) != NULL) {
+        DBG(fprintf(stderr, "Next cmd in buf:%s\n", next))
         ++n_cmd;
         p = next;
         ++p;
     }
 
-    DBG(fprintf(stderr, "Number of pipes:%u\n", n_cmd))
+    DBG(fprintf(stderr, "\n\n\n"))
 
-    struct command_t* n_commands = (struct command_t*) calloc(n_cmd, sizeof(struct command_t));
-    assert(n_commands);
+    return n_cmd;
+}
 
-    next = strtok(buf, "|");
-    char* next_argv = NULL;
-    unsigned cmd_size = 0;
-    unsigned count = 0;
-    do {
-        n_commands[count].cmd = next;
-        next = strtok(NULL, "|");
-        count++;
-    } while (next != NULL);
+char* skip_spaces(char* buf) {
+    assert(buf);
+    char* p = buf;
+    while (isspace(*p)){
+        ++p;
+    }
+    return p;
+}
+
+unsigned get_argc(char* cmd) {
+    DBG(fprintf(stderr, "Getting argc in cmd:%s\n", cmd))
+    unsigned argc = 1;
+    char* next = NULL;
+    char* p = cmd;
+    while ((next = strchr(p, ' ')) != NULL) {
+        p = next;
+        p = skip_spaces(p);
+        if (*p == '\0') {
+            break;
+        }
+        ++p;
+        ++argc;
+    }
+    //DBG(fprintf(stderr, "\n\n\n"))
+    return argc;
+}
+
+char** get_argv(char* cmd, int argc) {
+    char** argv = (char**) calloc(argc + 1, sizeof(char*));
+    argv[argc] = NULL;
+    if (argv == NULL) {
+        ASSERT_OK(BAD_ALLOC)
+    }
+    char* p = cmd;
+    char* next = NULL;
+    int i = 0;
+
+    while ((next = strchr(p, ' ')) != NULL) {
+        argv[i] = p;
+        p = next;
+        *next = '\0';
+        ++p;
+        p = skip_spaces(p);
+        // if (*p == '\0') {
+        //     break;
+        // }
+        ++i;
+    } 
+    argv[i] = p;
+
+    if ((next = strchr(p, '\n')) != NULL) {
+        *next = '\0';
+    }
+
+    argv[argc] = NULL;
+
+    return argv;
+}
+
+void print_cmd(struct command_t* cmd) {
+    for (int i = 0; i < cmd->argc; ++i) {
+        fprintf(stderr, "Cmd[%d] = %s\n", i, cmd->argv[i]);
+    }
+    fprintf(stderr, "\n\n\n");
+}
+
+void print_commands(struct commands_t* commands) {
+    for(int i = 0; i < commands->n_cmd; ++i) {
+        fprintf(stderr, "commands[%d]:\n", i);
+        print_cmd(&(commands->commands[i]));
+    }
+    fprintf(stderr, "\n\n\n");
+}
+ 
+struct commands_t* get_cmds(char* buf, unsigned buf_size) {
+
+    unsigned n_cmd = get_cmd_count(buf, buf_size);
+    DBG(fprintf(stderr, "Number of pipes(commands):%u\n", n_cmd))
 
     struct commands_t* commands = (struct commands_t*) calloc(1, sizeof(struct commands_t));
-    assert(commands);
-    commands->commands = n_commands;
+    if (commands == NULL) {
+        ASSERT_OK(BAD_ALLOC)
+    }
     commands->n_cmd = n_cmd;
 
-    for (int i = 0; i < n_cmd; ++i) {
-        fprintf(stderr, "commands [%d] =%s\n", i, commands->commands[i].cmd);
+    struct command_t* n_comm = (struct command_t*) calloc(commands->n_cmd, sizeof(struct command_t));
+    if (n_comm == NULL) {
+        ASSERT_OK(BAD_ALLOC)
     }
 
-    for (int i = 0; i < commands->n_cmd; ++i) {
-        do {
-            n_commands[count].cmd = next;
-            next = strtok(NULL, " ");
-            count++;
-        } while (next != NULL);
+    unsigned cmd_count = 0;
+    char* next = NULL;
+    char* p = buf;
+    p = skip_spaces(buf);
+    DBG(fprintf(stderr, "After skipping spaces:%s\n", p))
+    next = strtok(p, "|");
+    next = strtok(NULL, "|");
+    DBG(fprintf(stderr, "Parsed command:%s\n", p))
+    n_comm[cmd_count].argc = get_argc(p);
+    DBG(fprintf(stderr, "argc in cmd:%s is:  %d\n", p, n_comm[cmd_count].argc))
+    n_comm[cmd_count].argv = get_argv(p, n_comm[cmd_count].argc);
+    DBG(print_cmd(&n_comm[cmd_count]))
+    DBG(fprintf(stderr, "next: %s\n", next))
+    p = next;
+    cmd_count++;
+
+    while ((next = strtok(NULL, "|")) != NULL) {
+        p = skip_spaces(p);
+        DBG(fprintf(stderr, "After skipping spaces:%s\n", p))
+        DBG(fprintf(stderr, "Parsed command:%s\n", p))
+        n_comm[cmd_count].argc = get_argc(p);
+        DBG(fprintf(stderr, "argc in cmd:%s is:%d\n", p, n_comm[cmd_count].argc))
+        n_comm[cmd_count].argv = get_argv(p, n_comm[cmd_count].argc);
+        DBG(print_cmd(&n_comm[cmd_count]))
+        DBG(fprintf(stderr, "next: %s\n", next))
+        p = next;
+        ++cmd_count;
     }
+    p = skip_spaces(p);
+    DBG(fprintf(stderr, "After skipping spaces:%s\n", p))
+    DBG(fprintf(stderr, "Parsed command:%s\n", p))
+    n_comm[cmd_count].argc = get_argc(p);
+    DBG(fprintf(stderr, "argc in cmd:%s is:%d\n", p, n_comm[cmd_count].argc))
+    n_comm[cmd_count].argv = get_argv(p, n_comm[cmd_count].argc);
+    DBG(print_cmd(&n_comm[cmd_count]))
+    DBG(fprintf(stderr, "next: %s\n", next))
+    p = next;
+    ++cmd_count;
+
+    commands->commands = n_comm;
+    //DBG(print_commands(commands))
+
 
     return commands;
 }
 
+void exec_cmd(struct command_t* command) {
+    execvp(command->argv[0], command->argv);
+}
+
+void exec_commands(struct commands_t* commands) {
+
+    int* fd = (int*) calloc(commands->n_cmd * 2, sizeof(int)); //pipe
+    if (fd == NULL) {
+        ASSERT_OK(BAD_ALLOC)
+    }
+
+    for (int i = 0; i < commands->n_cmd - 1; ++i) { // opening all needed pipes (n_cmd - 1)
+        if (pipe(fd + 2 * i) < 0) {
+            ASSERT_OK(PIPE_ERROR)
+        }
+    }
+    int status;
+    int pid = 0;
+    for (int i = 0; i < commands->n_cmd; ++i) {
+        if ((pid = fork()) == 0) {
+            if (i != commands->n_cmd - 1) { // if not last command changins stdout to pipe
+                DBG(fprintf(stderr, "Changing stdout to pipe\n"))
+                if (dup2(fd[(2 * i) + 1], STDOUT_FILENO) < 0) {
+                    ASSERT_OK(PIPE_ERROR)
+                }
+            }
+            if (i != 0) { // if not first command
+                DBG(fprintf(stderr, "Changing stdin to pipe\n"))
+                if (dup2(fd[(2 * i) - 2], STDIN_FILENO) < 0) {
+                    ASSERT_OK(PIPE_ERROR)
+                }
+            }
+            for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+               close(fd[j]);
+            }
+            exec_cmd(&(commands->commands[i]));
+            DBG(fprintf(stderr, "execvp error\n"))
+        }
+    }
+
+    for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+        close(fd[j]);
+    }
+
+    for(int j = 0; j < 2 * commands->n_cmd; j++) {
+            wait(&status);
+        }
+}
+
 
 int main (int argc, char** argv) {
+
     int result = check_input(argc, argv);
     dump(result);
     int input = handle_input(argc, argv);
@@ -174,12 +346,31 @@ int main (int argc, char** argv) {
     buf[input_size] = '\0';
     DBG(fprintf(stderr, "Buffer:%s\n", buf))
 
-    struct commands_t* commands = get_cmd(buf, input_size); // getting commands array
+    struct commands_t* commands = get_cmds(buf, input_size); // getting commands array
 
     DBG(fprintf(stderr, "Freeing memory\n"))
+    print_commands(commands);
 
-    free(commands->commands);
-    free(commands);
+    //exec_commands(commands);
+    //execvp(commands->commands[0].argv[0], commands->commands[0].argv)
+    
+    #ifdef TEST
+    char* argvv[5] = {"ls", "-G", "-p", "-l", NULL};
+    char** argvvv = commands->commands[0].argv;
+    int i = 0;
+    while (*argvvv != NULL) {
+        fprintf(stderr, "argv[%d] = %s\n", i, commands->commands[0].argv[i]);
+        ++i;
+        ++argvvv;
+    }
+    #endif
+
+    exec_commands(commands);
+    //execvp(commands->commands[0].argv[0], commands->commands[0].argv);
+    //execvp(commands->commands[0].argv[0], argvv);
+    //DBG(fprintf(stderr, "error calling execvp\n"))
+    //free(commands->c); add free later
+    //free(commands);
     free(buf);
     return 0;
 }
