@@ -268,6 +268,8 @@ struct commands_t* get_cmds(char* buf, unsigned buf_size) {
 
 void exec_cmd(struct command_t* command) {
     execvp(command->argv[0], command->argv);
+    DBG(fprintf(stderr, "execvp error\n"))
+    exit(EXECVP_ERROR);
 }
 
 void exec_commands(struct commands_t* commands) {
@@ -298,18 +300,17 @@ void exec_commands(struct commands_t* commands) {
                     ASSERT_OK(PIPE_ERROR)
                 }
             }
-            //for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
-               close(fd[i]);
-            //}
+            for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+               close(fd[j]);
+            }
             exec_cmd(&(commands->commands[i]));
-            DBG(fprintf(stderr, "execvp error\n"))
-            exit(EXECVP_ERROR);
         }
     }
 
-    //for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
-        close(fd[2 * (commands->n_cmd - 1) - 1]); // closing last pipe to put data to stdout
-    //}
+    for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+        //close(fd[2 * (commands->n_cmd - 1) - 1]); // closing last pipe to put data to stdout
+    close(fd[j]);
+    }
 
     for(int j = 0; j < 2 * commands->n_cmd; j++) {
             wait(&status);
