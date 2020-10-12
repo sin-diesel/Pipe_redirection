@@ -1,1 +1,1 @@
-cat pipe.c | less | wc -l
+cat pipe.c | grep fprintf | wc -l

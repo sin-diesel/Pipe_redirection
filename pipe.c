@@ -272,42 +272,47 @@ void exec_cmd(struct command_t* command) {
 
 void exec_commands(struct commands_t* commands) {
 
-    // int* fd = (int*) calloc(commands->n_cmd * 2, sizeof(int)); //pipes
-    // if (pipe(fd) == -1) {
-    //     ASSERT_OK(PIPE_ERROR)
-    // }
-    // if (fd == NULL) {
-    //     ASSERT_OK(BAD_ALLOC)
-    // }
-    int test_fd[2] = {0};
-    int status;
-    int pid = 0;
-    if (pipe(test_fd) == -1) {
-            ASSERT_OK(PIPE_ERROR)
+    int* fd = (int*) calloc(commands->n_cmd * 2, sizeof(int)); //pipe
+    if (fd == NULL) {
+        ASSERT_OK(BAD_ALLOC)
     }
-    for (int i = 0; i < commands->n_cmd; ++i) {
-        wait(&status);
-        if ((pid = fork()) == 0) {
-            // if (pipe(test_fd) == -1) {
-            // ASSERT_OK(PIPE_ERROR)
-            // }
-            if (i == 1) {
-            DBG(fprintf(stderr, "Changing stdin to pipe\n"))
-            dup2(test_fd[0], STDIN_FILENO);
-            dup2(STDOUT_FILENO, test_fd[1]);
-            }
-            if (i == 0) {
-            DBG(fprintf(stderr, "Changing stdout to pipe\n"))
-            dup2(test_fd[1], STDOUT_FILENO);
-            //dup2(STDIN_FILENO, test_fd[0]);
-            }
-            //if (i == 1) {
-              //  dup2(1, test_fd[1]);
-           // }
-            exec_cmd(&(commands->commands[i]));
-            //close(test_fd);
+
+    for (int i = 0; i < commands->n_cmd - 1; ++i) { // opening all needed pipes (n_cmd - 1)
+        if (pipe(fd + 2 * i) < 0) {
+            ASSERT_OK(PIPE_ERROR)
         }
     }
+    int status;
+    int pid = 0;
+    for (int i = 0; i < commands->n_cmd; ++i) {
+        if ((pid = fork()) == 0) {
+            if (i != commands->n_cmd - 1) { // if not last command changins stdout to pipe
+                DBG(fprintf(stderr, "Changing stdout to pipe\n"))
+                if (dup2(fd[(2 * i) + 1], STDOUT_FILENO) < 0) {
+                    ASSERT_OK(PIPE_ERROR)
+                }
+            }
+            if (i != 0) { // if not first command
+                DBG(fprintf(stderr, "Changing stdin to pipe\n"))
+                if (dup2(fd[(2 * i) - 2], STDIN_FILENO) < 0) {
+                    ASSERT_OK(PIPE_ERROR)
+                }
+            }
+            for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+               close(fd[j]);
+            }
+            exec_cmd(&(commands->commands[i]));
+            DBG(fprintf(stderr, "execvp error\n"))
+        }
+    }
+
+    for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
+        close(fd[j]);
+    }
+
+    for(int j = 0; j < 2 * commands->n_cmd; j++) {
+            wait(&status);
+        }
 }
 
 
