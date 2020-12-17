@@ -1,1 +1,1 @@
-lls -lai / | gre bin | wc -l
+ls -l -G -p / | less

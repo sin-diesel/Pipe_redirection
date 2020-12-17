@@ -309,11 +309,11 @@ void exec_commands(struct commands_t* commands) {
 
     for (int j = 0; j < 2 * (commands->n_cmd - 1); j++) {
         //close(fd[2 * (commands->n_cmd - 1) - 1]); // closing last pipe to put data to stdout
-    close(fd[j]);
+        close(fd[j]);
     }
 
     for(int j = 0; j < 2 * commands->n_cmd; j++) {
-            wait(&status);
+        wait(&status);
     }
 }
 
